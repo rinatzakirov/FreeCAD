@@ -1,5 +1,8 @@
 ![Logo](https://www.freecadweb.org/images/logo.png)
 
+### This fork adds a few modifications on top of the original:
+TODO
+
 ### Your own 3D parametric modeler
 
 [Website](https://www.freecadweb.org) • 
