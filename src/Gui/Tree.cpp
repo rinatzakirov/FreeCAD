@@ -439,10 +439,10 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
     if(!_LastSelectedTreeWidget)
         _LastSelectedTreeWidget = this;
 
-    this->setDragEnabled(true);
-    this->setAcceptDrops(true);
+    this->setDragEnabled(false);
+    this->setAcceptDrops(false);
     this->setDropIndicatorShown(false);
-    this->setDragDropMode(QTreeWidget::InternalMove);
+    //this->setDragDropMode(QTreeWidget::InternalMove);
     this->setRootIsDecorated(false);
     this->setColumnCount(2);
     this->setItemDelegate(new TreeWidgetEditDelegate(this));
