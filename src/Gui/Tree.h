@@ -254,6 +254,7 @@ private:
 
     std::string myName; // for debugging purpose
     int updateBlocked = 0;
+    bool myDragEnabled;
 
     friend class DocumentItem;
     friend class DocumentObjectItem;

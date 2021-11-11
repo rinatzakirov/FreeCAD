@@ -439,6 +439,8 @@ TreeWidget::TreeWidget(const char *name, QWidget* parent)
     if(!_LastSelectedTreeWidget)
         _LastSelectedTreeWidget = this;
 
+    qApp->installEventFilter(this);
+    myDragEnabled = false;
     this->setDragEnabled(false);
     this->setAcceptDrops(false);
     this->setDropIndicatorShown(false);
@@ -1342,16 +1344,43 @@ bool TreeWidget::event(QEvent *e)
 
 bool TreeWidget::eventFilter(QObject *, QEvent *ev) {
     switch (ev->type()) {
-    case QEvent::KeyPress:
+    case QEvent::KeyPress: {
+        QKeyEvent *ke = static_cast<QKeyEvent *>(ev);
+        if (ke->key() == Qt::Key_Alt) {
+            this->setDragEnabled(true);
+            this->setAcceptDrops(true);
+            this->setDragDropMode(QTreeWidget::InternalMove);
+            myDragEnabled = true;
+        }
+        if (0 && myDragEnabled && _DragEventFilter) {
+            if (ke->key() != Qt::Key_Escape) {
+                // Qt 5 only recheck key modifier on mouse move, so generate a fake
+                // event to trigger drag cursor change
+                QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseMove,
+                        mapFromGlobal(QCursor::pos()), QCursor::pos(), Qt::NoButton,
+                        QApplication::mouseButtons(), QApplication::queryKeyboardModifiers());
+                QApplication::postEvent(this,mouseEvent);
+            }
+        }
+    break;
+    }
     case QEvent::KeyRelease: {
         QKeyEvent *ke = static_cast<QKeyEvent *>(ev);
-        if (ke->key() != Qt::Key_Escape) {
-            // Qt 5 only recheck key modifier on mouse move, so generate a fake
-            // event to trigger drag cursor change
-            QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseMove,
-                    mapFromGlobal(QCursor::pos()), QCursor::pos(), Qt::NoButton,
-                    QApplication::mouseButtons(), QApplication::queryKeyboardModifiers());
-            QApplication::postEvent(this,mouseEvent);
+        if (ke->key() == Qt::Key_Alt) {
+            this->setDragEnabled(false);
+            this->setAcceptDrops(false);
+            this->setDragDropMode(QTreeWidget::NoDragDrop);
+            myDragEnabled = false;
+        }
+        if (0 && myDragEnabled && _DragEventFilter) {
+            if (ke->key() != Qt::Key_Escape) {
+                // Qt 5 only recheck key modifier on mouse move, so generate a fake
+                // event to trigger drag cursor change
+                QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseMove,
+                        mapFromGlobal(QCursor::pos()), QCursor::pos(), Qt::NoButton,
+                        QApplication::mouseButtons(), QApplication::queryKeyboardModifiers());
+                QApplication::postEvent(this,mouseEvent);
+            }
         }
         break;
     }
@@ -1465,10 +1494,11 @@ void TreeWidget::startDragging() {
 void TreeWidget::startDrag(Qt::DropActions supportedActions)
 {
     QTreeWidget::startDrag(supportedActions);
-    if(_DragEventFilter) {
-        _DragEventFilter = false;
-        qApp->removeEventFilter(this);
-    }
+
+    //if(_DragEventFilter) {
+    //    _DragEventFilter = false;
+    //    qApp->removeEventFilter(this);
+    //}
 }
 
 QMimeData * TreeWidget::mimeData (const QList<QTreeWidgetItem *> items) const
@@ -1511,10 +1541,10 @@ void TreeWidget::dragMoveEvent(QDragMoveEvent *event)
     // because QDrag installs a event filter that eats up key event. We install
     // a filter after Qt and generate fake mouse move event in response to key
     // press event, which triggers QDrag to update its cursor
-    if(!_DragEventFilter) {
-        _DragEventFilter = true;
-        qApp->installEventFilter(this);
-    }
+    //if(!_DragEventFilter) {
+    //    _DragEventFilter = true;
+    //    qApp->installEventFilter(this);
+    //}
 
     QTreeWidget::dragMoveEvent(event);
     if (!event->isAccepted())
