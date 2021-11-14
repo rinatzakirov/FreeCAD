@@ -277,6 +277,7 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
         ret.push_back(info);
     }
 
+#if 0
     if(ret.size()==0) return ret;
 
     printf("Pick list:\n");
@@ -292,6 +293,7 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
     }
 
     fflush(stdout);
+#endif
 
     if(singlePick1) {
         std::vector<PickedInfo> retEdge, retVertex, retFace, retOther;
