@@ -237,6 +237,9 @@ int SoFCUnifiedSelection::getPriority(const SoPickedPoint* p)
 std::vector<SoFCUnifiedSelection::PickedInfo>
 SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick) const
 {
+    bool singlePick1 = singlePick;
+    singlePick = false;
+
     ViewProvider *last_vp = 0;
     std::vector<PickedInfo> ret;
     const SoPickedPointList & points = action->getPickedPointList();
@@ -272,6 +275,62 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
         if(singlePick)
             last_vp = vp;
         ret.push_back(info);
+    }
+
+    if(ret.size()==0) return ret;
+
+    printf("Pick list:\n");
+    int cc = 0;
+    for(auto it=ret.begin();it!=ret.end();++it) {
+        auto &info = *it;
+
+        int cur_prio = getPriority(info.pp);
+        const SbVec3f& cur_pt = info.pp->getPoint();
+
+        const char *s = info.element.c_str();
+        printf(" %d: %s\n", cc++, s ? s : "NONE");
+    }
+
+    fflush(stdout);
+
+    if(singlePick1) {
+        std::vector<PickedInfo> retEdge, retVertex, retFace, retOther;
+        for(auto it=ret.begin();it!=ret.end();++it) {
+            auto &info = *it;
+
+            const SoDetail* detail = info.pp->getDetail();
+            if (!detail) {
+                if(retOther.size() == 0)
+                    retOther.push_back(info);
+                continue;
+            }
+            if (detail->isOfType(SoFaceDetail::getClassTypeId())) {
+                if(retFace.size() == 0)
+                    retFace.push_back(info);
+                continue;
+            }
+            if (detail->isOfType(SoLineDetail::getClassTypeId())) {
+                if(retEdge.size() == 0)
+                    retEdge.push_back(info);
+                continue;
+            }
+            if (detail->isOfType(SoPointDetail::getClassTypeId())) {
+                if(retVertex.size() == 0)
+                    retVertex.push_back(info);
+                continue;
+            }
+
+            if(retOther.size() == 0)
+                retOther.push_back(info);
+        }
+        if(retVertex.size())
+            return retVertex;
+        if(retEdge.size())
+            return retEdge;
+        if(retFace.size())
+            return retFace;
+        if(retOther.size())
+            return retOther;
     }
 
     if(ret.size()<=1) return ret;
@@ -502,7 +561,7 @@ bool SoFCUnifiedSelection::setHighlight(SoFullPath *path, const SoDetail *det,
         static char buf[513];
 
         auto pts = schemaTranslatePoint(x, y, z, 1e-7);
-        snprintf(buf,512,"Preselected: %s.%s.%s (%f %s, %f %s, %f %s)"
+        snprintf(buf,512,"Preselected(2): %s.%s.%s (%f %s, %f %s, %f %s)"
                 ,docname,objname,element
                 ,pts[0].first,pts[0].second.c_str()
                 ,pts[1].first,pts[1].second.c_str()
@@ -751,9 +810,11 @@ SoFCUnifiedSelection::handleEvent(SoHandleEventAction * action)
         if (mymode == AUTO || mymode == ON) {
             // check to see if the mouse is over our geometry...
             auto infos = this->getPickedList(action,true);
-            if(infos.size())
+            if(infos.size()) {
+                //printf("Actual: %s\n", infos[0].element.c_str());
+                //fflush(stdout);
                 setHighlight(infos[0]);
-            else {
+            } else {
                 setHighlight(PickedInfo());
                 if (this->preSelection > 0) {
                     this->preSelection = 0;
