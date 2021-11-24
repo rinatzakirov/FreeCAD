@@ -371,31 +371,80 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
                 retOther.push_back(info);
         }
 
-        bool skipEdge = false, skipFace = false;
+        try {
+            bool skipEdge = false, skipFace = false;
 
-        // This removes an edge or a face that has our vertex,
-        // but leaves those edge and face intact if they are unrelated to the vertex
-        if(retVertex.size()) {
-            if(retFace.size()) {
-                App::DocumentObject* obj = retFace[0].vpd->getObject();
-                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
-                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
-                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
-                    if (data) {
-                        const Data::ComplexGeoData *complexData = data->getComplexData();
-                        if(complexData) {
-                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retFace[0].element.c_str()));
+            // This removes an edge or a face that has our vertex,
+            // but leaves those edge and face intact if they are unrelated to the vertex
+            if(retVertex.size()) {
+                if(retFace.size()) {
+                    App::DocumentObject* obj = retFace[0].vpd->getObject();
+                    std::string subname = retFace[0].element;
+                    if(strstr(subname.c_str(), ".")) {
+                        std::string trimPath = subname;
+                        while(trimPath[trimPath.length() - 1] != '.') {
+                            trimPath.pop_back();
+                        }
+                        trimPath.pop_back();
+                        subname = subname.substr(trimPath.length() + 1, std::string::npos);
+                        obj = obj->getSubObject(trimPath.c_str());
+                    }
+                    if (obj && obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                        App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                        const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                        if (data) {
+                            const Data::ComplexGeoData *complexData = data->getComplexData();
+                            if(complexData) {
+                                std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(subname.c_str()));
 
-                            std::vector<Base::Vector3d> points, normals;
-                            std::vector<Data::ComplexGeoData::Facet> facets;            
+                                std::vector<Base::Vector3d> points, normals;
+                                std::vector<Data::ComplexGeoData::Facet> facets;            
 
-                            complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
-                            int count = 0;
-                            for(auto i = points.begin(); i != points.end(); i++, count++) {
-                                //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
-                                if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
-                                    skipFace = true;
-                                    break;
+                                complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
+                                int count = 0;
+                                for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                    //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                    if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
+                                        skipFace = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if(retEdge.size()) {
+                    App::DocumentObject* obj = retEdge[0].vpd->getObject();
+                    std::string subname = retEdge[0].element;
+                    if(strstr(subname.c_str(), ".")) {
+                        std::string trimPath = subname;
+                        while(trimPath[trimPath.length() - 1] != '.') {
+                            trimPath.pop_back();
+                        }
+                        trimPath.pop_back();
+                        subname = subname.substr(trimPath.length() + 1, std::string::npos);
+                        obj = obj->getSubObject(trimPath.c_str());
+                    }
+                    if (obj && obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                        App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                        const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                        if (data) {
+                            const Data::ComplexGeoData *complexData = data->getComplexData();
+                            if(complexData) {
+                                std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(subname.c_str()));
+
+                                std::vector<Base::Vector3d> points;
+                                std::vector<Data::ComplexGeoData::Line> lines;
+
+                                complexData->getLinesFromSubElement(segm.get(), points, lines);
+                                int count = 0;
+                                for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                    //printf("retEdge pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                    if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
+                                        skipEdge = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -403,101 +452,97 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
                 }
             }
 
-            if(retEdge.size()) {
-                App::DocumentObject* obj = retEdge[0].vpd->getObject();
-                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
-                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
-                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
-                    if (data) {
-                        const Data::ComplexGeoData *complexData = data->getComplexData();
-                        if(complexData) {
-                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retEdge[0].element.c_str()));
+            // This removes a face that has our edge,
+            // but leaves that face intact if it are unrelated to the edge
+            if(!skipEdge && retEdge.size()) {
+                std::vector<Base::Vector3d> edgePoints;
 
-                            std::vector<Base::Vector3d> points;
-                            std::vector<Data::ComplexGeoData::Line> lines;
+                if(retEdge.size()) {
+                    App::DocumentObject* obj = retEdge[0].vpd->getObject();
+                    std::string subname = retEdge[0].element;
+                    if(strstr(subname.c_str(), ".")) {
+                        std::string trimPath = subname;
+                        while(trimPath[trimPath.length() - 1] != '.') {
+                            trimPath.pop_back();
+                        }
+                        trimPath.pop_back();
+                        subname = subname.substr(trimPath.length() + 1, std::string::npos);
+                        obj = obj->getSubObject(trimPath.c_str());
+                    }
+                    if (obj && obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                        App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                        const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                        if (data) {
+                            const Data::ComplexGeoData *complexData = data->getComplexData();
+                            if(complexData) {
+                                std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(subname.c_str()));
+                                std::vector<Data::ComplexGeoData::Line> lines;
+                                complexData->getLinesFromSubElement(segm.get(), edgePoints, lines);
+                            }
+                        }
+                    }
+                }
 
-                            complexData->getLinesFromSubElement(segm.get(), points, lines);
-                            int count = 0;
-                            for(auto i = points.begin(); i != points.end(); i++, count++) {
-                                //printf("retEdge pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
-                                if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
-                                    skipEdge = true;
-                                    break;
+                if(!skipFace && retFace.size() && edgePoints.size()) {
+                    App::DocumentObject* obj = retFace[0].vpd->getObject();
+                    std::string subname = retFace[0].element;
+                    if(strstr(subname.c_str(), ".")) {
+                        std::string trimPath = subname;
+                        while(trimPath[trimPath.length() - 1] != '.') {
+                            trimPath.pop_back();
+                        }
+                        trimPath.pop_back();
+                        subname = subname.substr(trimPath.length() + 1, std::string::npos);
+                        obj = obj->getSubObject(trimPath.c_str());
+                    }
+                    if (obj && obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                        App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                        const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                        if (data) {
+                            const Data::ComplexGeoData *complexData = data->getComplexData();
+                            if(complexData) {
+                                std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(subname.c_str()));
+
+                                std::vector<Base::Vector3d> points, normals;
+                                std::vector<Data::ComplexGeoData::Facet> facets;            
+
+                                complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
+                                int count = 0;
+                                for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                    //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                    if((*i).IsEqual(edgePoints[0], 0.01)) { // sufficient to check just one of the edge points
+                                        skipFace = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            //printf("skipEdge = %d, skipFace = %d\n", skipEdge ? 1 : 0, skipFace ? 1 : 0);
+
+            // Skipped faces and edge to the back of the priority
+            if(skipFace)
+                distFace = 99999999;
+            if(skipEdge)
+                distEdge = 99999999;
+        } catch(...) {
+            static int counter = 0;
+            printf("Hmm, some error, idk, going with the simplest selector for now, try %d\n", counter++);
         }
-
-        // This removes a face that has our edge,
-        // but leaves that face intact if it are unrelated to the edge
-        if(!skipEdge && retEdge.size()) {
-            std::vector<Base::Vector3d> edgePoints;
-
-            if(retEdge.size()) {
-                App::DocumentObject* obj = retEdge[0].vpd->getObject();
-                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
-                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
-                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
-                    if (data) {
-                        const Data::ComplexGeoData *complexData = data->getComplexData();
-                        if(complexData) {
-                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retEdge[0].element.c_str()));
-                            std::vector<Data::ComplexGeoData::Line> lines;
-                            complexData->getLinesFromSubElement(segm.get(), edgePoints, lines);
-                        }
-                    }
-                }
-            }
-
-            if(!skipFace && retFace.size() && edgePoints.size()) {
-                App::DocumentObject* obj = retFace[0].vpd->getObject();
-                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
-                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
-                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
-                    if (data) {
-                        const Data::ComplexGeoData *complexData = data->getComplexData();
-                        if(complexData) {
-                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retFace[0].element.c_str()));
-
-                            std::vector<Base::Vector3d> points, normals;
-                            std::vector<Data::ComplexGeoData::Facet> facets;            
-
-                            complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
-                            int count = 0;
-                            for(auto i = points.begin(); i != points.end(); i++, count++) {
-                                //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
-                                if((*i).IsEqual(edgePoints[0], 0.01)) { // sufficient to check just one of the edge points
-                                    skipFace = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        //printf("skipEdge = %d, skipFace = %d\n", skipEdge ? 1 : 0, skipFace ? 1 : 0);
-
-        // Skipped faces and edge to the back of the priority
-        if(skipFace)
-            distFace = 99999999;
-        if(skipEdge)
-            distEdge = 99999999;
 
         float distMin = std::min(std::min(distEdge, distVertex), std::min(distFace, distOther));
 
         if(retOther.size() && distOther == distMin)
             return retOther;
-        if(retFace.size() && distFace == distMin)
-            return retFace;
-        if(retEdge.size() && distEdge == distMin)
-            return retEdge;
         if(retVertex.size() && distVertex == distMin)
             return retVertex;
+        if(retEdge.size() && distEdge == distMin)
+            return retEdge;
+        if(retFace.size() && distFace == distMin)
+            return retFace;
     }
 
     if(ret.size()<=1) return ret;
