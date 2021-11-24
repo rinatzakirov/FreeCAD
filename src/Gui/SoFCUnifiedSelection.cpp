@@ -59,12 +59,15 @@
 #include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/misc/SoState.h>
 #include <Inventor/misc/SoChildList.h>
+#include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoMaterialBinding.h>
 #include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/events/SoLocation2Event.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/threads/SbStorage.h>
+#include "View3DInventor.h"
+#include "View3DInventorViewer.h"
 
 #ifdef FC_OS_MACOSX
 # include <OpenGL/gl.h>
@@ -81,6 +84,7 @@
 #include <Base/Tools.h>
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/GeoFeature.h>
 #include <Gui/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ComplexGeoData.h>
@@ -277,19 +281,29 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
         ret.push_back(info);
     }
 
+    View3DInventor *view3d = dynamic_cast<View3DInventor *>(this->pcDocument->getActiveView());
+    SoCamera* camera = view3d->getViewer()->getSoRenderManager()->getCamera();
+    auto &cam_pos = camera->position.getValue();
+
 #if 0
     if(ret.size()==0) return ret;
 
     printf("Pick list:\n");
     int cc = 0;
+    //auto *view = this->pcDocument->getActiveView();
+    float x, y, z;
+    cam_pos.getValue(x, y, z);
+    printf("camera = %0.3f %0.3f %0.3f\n", x, y, z);
+
     for(auto it=ret.begin();it!=ret.end();++it) {
         auto &info = *it;
 
-        int cur_prio = getPriority(info.pp);
+        //int cur_prio = getPriority(info.pp);
         const SbVec3f& cur_pt = info.pp->getPoint();
 
         const char *s = info.element.c_str();
-        printf(" %d: %s\n", cc++, s ? s : "NONE");
+        cur_pt.getValue(x, y, z);
+        printf(" %d: %0.3f %0.3f %0.3f %s\n", cc++, x, y, z, s ? s : "NONE");
     }
 
     fflush(stdout);
@@ -297,42 +311,193 @@ SoFCUnifiedSelection::getPickedList(SoHandleEventAction* action, bool singlePick
 
     if(singlePick1) {
         std::vector<PickedInfo> retEdge, retVertex, retFace, retOther;
+        float distEdge = 9999999, distVertex = 9999999, distFace = 9999999, distOther = 9999999;
         for(auto it=ret.begin();it!=ret.end();++it) {
             auto &info = *it;
+            const SbVec3f& pt = info.pp->getPoint();
+            float dist = (cam_pos - pt).length();
 
             const SoDetail* detail = info.pp->getDetail();
             if (!detail) {
-                if(retOther.size() == 0)
+                if(retOther.size() == 0) {
                     retOther.push_back(info);
+                    distOther = dist;
+                } else {
+                    if(dist < distOther) {
+                        distOther = dist;
+                        retOther[0] = info;
+                    }
+                }
                 continue;
             }
             if (detail->isOfType(SoFaceDetail::getClassTypeId())) {
-                if(retFace.size() == 0)
+                if(retFace.size() == 0) {
                     retFace.push_back(info);
+                    distFace = dist;
+                } else {
+                    if(dist < distFace) {
+                        distFace = dist;
+                        retFace[0] = info;
+                    }
+                }
                 continue;
             }
             if (detail->isOfType(SoLineDetail::getClassTypeId())) {
-                if(retEdge.size() == 0)
+                if(retEdge.size() == 0) {
                     retEdge.push_back(info);
+                    distEdge = dist;
+                } else {
+                    if(dist < distEdge) {
+                        distEdge = dist;
+                        retEdge[0] = info;
+                    }
+                }
                 continue;
             }
             if (detail->isOfType(SoPointDetail::getClassTypeId())) {
-                if(retVertex.size() == 0)
+                if(retVertex.size() == 0) {
                     retVertex.push_back(info);
+                    distVertex = dist;
+                } else {
+                    if(dist < distVertex) {
+                        distVertex = dist;
+                        retVertex[0] = info;
+                    }
+                }
                 continue;
             }
 
             if(retOther.size() == 0)
                 retOther.push_back(info);
         }
-        if(retVertex.size())
-            return retVertex;
-        if(retEdge.size())
-            return retEdge;
-        if(retFace.size())
-            return retFace;
-        if(retOther.size())
+
+        bool skipEdge = false, skipFace = false;
+
+        // This removes an edge or a face that has our vertex,
+        // but leaves those edge and face intact if they are unrelated to the vertex
+        if(retVertex.size()) {
+            if(retFace.size()) {
+                App::DocumentObject* obj = retFace[0].vpd->getObject();
+                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                    if (data) {
+                        const Data::ComplexGeoData *complexData = data->getComplexData();
+                        if(complexData) {
+                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retFace[0].element.c_str()));
+
+                            std::vector<Base::Vector3d> points, normals;
+                            std::vector<Data::ComplexGeoData::Facet> facets;            
+
+                            complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
+                            int count = 0;
+                            for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
+                                    skipFace = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if(retEdge.size()) {
+                App::DocumentObject* obj = retEdge[0].vpd->getObject();
+                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                    if (data) {
+                        const Data::ComplexGeoData *complexData = data->getComplexData();
+                        if(complexData) {
+                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retEdge[0].element.c_str()));
+
+                            std::vector<Base::Vector3d> points;
+                            std::vector<Data::ComplexGeoData::Line> lines;
+
+                            complexData->getLinesFromSubElement(segm.get(), points, lines);
+                            int count = 0;
+                            for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                //printf("retEdge pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                if(SbVec3f((*i).x, (*i).y, (*i).z).equals(retVertex[0].pp->getPoint(), 0.01)) {
+                                    skipEdge = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // This removes a face that has our edge,
+        // but leaves that face intact if it are unrelated to the edge
+        if(!skipEdge && retEdge.size()) {
+            std::vector<Base::Vector3d> edgePoints;
+
+            if(retEdge.size()) {
+                App::DocumentObject* obj = retEdge[0].vpd->getObject();
+                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                    if (data) {
+                        const Data::ComplexGeoData *complexData = data->getComplexData();
+                        if(complexData) {
+                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retEdge[0].element.c_str()));
+                            std::vector<Data::ComplexGeoData::Line> lines;
+                            complexData->getLinesFromSubElement(segm.get(), edgePoints, lines);
+                        }
+                    }
+                }
+            }
+
+            if(!skipFace && retFace.size() && edgePoints.size()) {
+                App::DocumentObject* obj = retFace[0].vpd->getObject();
+                if (obj->getTypeId().isDerivedFrom(App::GeoFeature::getClassTypeId())) {
+                    App::GeoFeature* geo = static_cast<App::GeoFeature*>(obj);
+                    const App::PropertyComplexGeoData* data = geo->getPropertyOfGeometry();
+                    if (data) {
+                        const Data::ComplexGeoData *complexData = data->getComplexData();
+                        if(complexData) {
+                            std::unique_ptr<Data::Segment> segm(complexData->getSubElementByName(retFace[0].element.c_str()));
+
+                            std::vector<Base::Vector3d> points, normals;
+                            std::vector<Data::ComplexGeoData::Facet> facets;            
+
+                            complexData->getFacesFromSubElement(segm.get(), points, normals, facets);
+                            int count = 0;
+                            for(auto i = points.begin(); i != points.end(); i++, count++) {
+                                //printf("retFace pt %d: %0.3f %0.3f %0.3f\n", count, (*i).x, (*i).y, (*i).z);
+                                if((*i).IsEqual(edgePoints[0], 0.01)) { // sufficient to check just one of the edge points
+                                    skipFace = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        //printf("skipEdge = %d, skipFace = %d\n", skipEdge ? 1 : 0, skipFace ? 1 : 0);
+
+        // Skipped faces and edge to the back of the priority
+        if(skipFace)
+            distFace = 99999999;
+        if(skipEdge)
+            distEdge = 99999999;
+
+        float distMin = std::min(std::min(distEdge, distVertex), std::min(distFace, distOther));
+
+        if(retOther.size() && distOther == distMin)
             return retOther;
+        if(retFace.size() && distFace == distMin)
+            return retFace;
+        if(retEdge.size() && distEdge == distMin)
+            return retEdge;
+        if(retVertex.size() && distVertex == distMin)
+            return retVertex;
     }
 
     if(ret.size()<=1) return ret;
@@ -682,6 +847,8 @@ bool SoFCUnifiedSelection::setSelection(const std::vector<PickedInfo> &infos, bo
 
     const char *subSelected = Gui::Selection().getSelectedElement(
                                 vpd->getObject(),subName.c_str());
+    if(subSelected)
+        printf("subSelected = %s\n", subSelected);
 
     FC_TRACE("select " << (subSelected?subSelected:"'null'") << ", " <<
             objectName << ", " << subName);
